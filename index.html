@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Guided 3D training demo: a main landing gear wheel change where each step unlocks only when you do it correctly.">
+<meta name="theme-color" content="#141A20">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AMM Trainer">
+<title>AMM Step Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: hangar-floor 3D stage on the left, AMM task card on the right (stacked under the stage on phones).
+   Cockpit colour logic: cyan = active / selectable, green = done, amber = CAUTION, red = WARNING, magenta = hint target. */
+:root{
+  color-scheme:dark;
+  --bg:#0D1013; --panel:#141A20; --panel2:#1B222A; --line:#2A333D; --ink:#E7ECEF; --muted:#8F9CA8;
+  --cyan:#4FD1E8; --green:#47C27C; --amber:#F2B531; --red:#F0544F; --magenta:#D96BE6;
+  --font-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+html{height:100%;box-sizing:border-box}
+*,*::before,*::after{box-sizing:border-box}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5;overflow:hidden}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.mono{font-family:var(--font-mono)}
+
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
+header{display:flex;align-items:center;gap:10px;padding:9px clamp(12px,2vw,20px);background:var(--panel);border-bottom:1px solid var(--line);min-width:0}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;margin-right:auto}
+.mark{font-family:var(--font-display);font-weight:600;font-size:1rem;background:var(--amber);color:#16120a;padding:1px 7px;border-radius:3px;letter-spacing:.06em;flex:none}
+.ttl{display:block;font-family:var(--font-display);font-weight:600;font-size:1.22rem;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{display:block;font-family:var(--font-mono);font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbtn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;font-weight:500;font-size:.88rem;flex:none}
+.hbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hbtn.vr-on{border-color:var(--cyan);color:var(--cyan)}
+.hbtn.icon{width:36px;padding:0;justify-content:center}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 400px;min-height:0}
+.stage{position:relative;min-height:0;min-width:0;overflow:hidden}
+.stage canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.stage canvas.over{cursor:pointer}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 0 transparent;transition:box-shadow .35s}
+.stage.flash-err::after{box-shadow:inset 0 0 0 3px var(--red),inset 0 0 60px rgba(240,84,79,.25)}
+.stage.flash-ok::after{box-shadow:inset 0 0 0 3px var(--green),inset 0 0 60px rgba(71,194,124,.2)}
+.demo-chip{position:absolute;left:12px;top:12px;font-family:var(--font-mono);font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);background:rgba(13,16,19,.78);border:1px solid rgba(242,181,49,.45);padding:4px 8px;border-radius:4px;pointer-events:none}
+.help{position:absolute;right:12px;top:12px;font-size:.78rem;color:var(--muted);background:rgba(13,16,19,.78);border:1px solid var(--line);padding:4px 9px;border-radius:4px;pointer-events:none;transition:opacity .4s}
+.help.gone{opacity:0}
+.tip{position:absolute;pointer-events:none;background:rgba(13,16,19,.92);border:1px solid var(--line);color:var(--ink);font-size:.78rem;padding:3px 8px;border-radius:4px;white-space:nowrap;transform:translate(12px,12px)}
+.tools{position:absolute;left:0;right:0;bottom:0;padding:22px 12px 12px;background:linear-gradient(to top,rgba(13,16,19,.94) 55%,rgba(13,16,19,0));overflow-x:auto;scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+.tool-row{display:flex;gap:8px;width:max-content;margin-inline:auto}
+.tool-label{font-family:var(--font-mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);align-self:center;margin-right:2px;writing-mode:vertical-rl;transform:rotate(180deg)}
+.tool{display:grid;justify-items:center;gap:3px;width:74px;padding:8px 4px 7px;border-radius:8px;border:1.5px solid var(--line);background:var(--panel);cursor:pointer;font-size:.72rem;line-height:1.15;font-weight:500;color:var(--muted)}
+.tool svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tool:hover{color:var(--ink)}
+.tool[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan);background:rgba(79,209,232,.08)}
+
+.panel{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border-left:1px solid var(--line)}
+.pscroll{flex:1;min-height:0;overflow-y:auto;padding:18px 20px 16px;display:grid;gap:14px;align-content:start}
+.prog{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:3px}
+.prog i{height:4px;border-radius:2px;background:var(--line)}
+.prog i.done{background:var(--green)}
+.prog i.cur{background:var(--cyan)}
+.ref{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan)}
+.step-title{margin:0;font-family:var(--font-display);font-weight:600;font-size:1.85rem;line-height:1.02;text-wrap:balance}
+.instr{margin:0;max-width:60ch}
+.callout{border:1.5px solid var(--line);border-radius:6px;padding:9px 12px;font-size:.9rem}
+.callout b{display:block;font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;margin-bottom:2px}
+.callout.warning{border-color:var(--red)}.callout.warning b{color:var(--red)}
+.callout.caution{border-color:var(--amber)}.callout.caution b{color:var(--amber)}
+.callout.note b{color:var(--muted)}
+.opts{display:grid;gap:7px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);cursor:pointer;font-size:.93rem}
+.opt input{width:18px;height:18px;margin:.15rem 0 0;accent-color:var(--cyan);flex:none}
+.opt:has(input:checked){border-color:var(--cyan)}
+.check-btn{justify-self:start}
+.torque{display:grid;gap:8px}
+.torque p{margin:0;font-size:.86rem;color:var(--muted)}
+.tq-row{display:flex;flex-wrap:wrap;gap:7px}
+.tq{padding:7px 12px;border-radius:999px;border:1.5px solid var(--line);background:var(--panel2);cursor:pointer;font-family:var(--font-mono);font-size:.85rem;font-variant-numeric:tabular-nums}
+.tq[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan)}
+details.box{border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+details.box summary{cursor:pointer;padding:9px 12px;font-weight:600;font-size:.9rem;list-style:none;display:flex;justify-content:space-between;gap:8px}
+details.box summary::-webkit-details-marker{display:none}
+details.box summary::after{content:"+";font-family:var(--font-mono);color:var(--muted)}
+details.box[open] summary::after{content:"\2212"}
+.box-body{padding:2px 12px 12px;display:grid;gap:8px;font-size:.88rem}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:4px 12px}
+.kv dt{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-top:.15rem}
+.kv dd{margin:0}
+.data-hi{color:var(--cyan);font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.small{font-size:.8rem;color:var(--muted)}
+.steplist{list-style:none;margin:0;padding:0;display:grid}
+.steplist li{display:grid;grid-template-columns:26px 1fr 18px;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:.88rem;color:var(--muted)}
+.steplist li:first-child{border-top:0}
+.steplist .n{font-family:var(--font-mono);font-size:.72rem;font-variant-numeric:tabular-nums}
+.steplist li.done{color:var(--ink)}
+.steplist li.cur{color:var(--cyan);font-weight:600}
+.steplist svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.steplist li.done svg{color:var(--green)}
+.pfoot{border-top:1px solid var(--line);padding:12px 20px calc(12px + env(safe-area-inset-bottom,0px));display:grid;gap:10px;background:var(--panel)}
+.fb{display:flex;gap:8px;align-items:flex-start;min-height:2.9em;font-size:.92rem;margin:0}
+.fb::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;margin-top:.45em;background:var(--muted)}
+.fb.ok{color:var(--green)}.fb.ok::before{background:var(--green)}
+.fb.err{color:var(--red)}.fb.err::before{background:var(--red)}
+.fb.info{color:var(--ink)}.fb.info::before{background:var(--cyan)}
+.btns{display:grid;grid-template-columns:auto 1fr;gap:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:0 14px;border-radius:8px;border:1.5px solid var(--line);background:var(--panel2);cursor:pointer;font-weight:600;font-size:.93rem}
+.btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.next{background:var(--green);border-color:var(--green);color:#06140c}
+.btn.next:disabled{background:var(--panel2);border-color:var(--line);color:var(--muted);cursor:not-allowed}
+.btn.ghost-cyan{border-color:var(--cyan);color:var(--cyan);background:transparent}
+.stats{display:flex;gap:14px;font-family:var(--font-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.done-card{display:grid;gap:12px}
+.done-card p{margin:0}
+.done-card .big{font-family:var(--font-display);font-weight:600;font-size:2.4rem;line-height:1;color:var(--green)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tiles div{border:1px solid var(--line);border-radius:6px;padding:9px 10px;background:var(--panel2)}
+.tiles b{display:block;font-family:var(--font-mono);font-size:1.25rem;font-variant-numeric:tabular-nums}
+.tiles span{font-size:.75rem;color:var(--muted)}
+
+@media (max-width:820px){
+  .main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,48%)}
+  .panel{border-left:0;border-top:1px solid var(--line)}
+  .pscroll{padding:14px 16px 12px;gap:12px}
+  .pfoot{padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));gap:8px}
+  .step-title{font-size:1.55rem}
+  .help{display:none}
+  .tool{width:66px}
+  .fb{min-height:2.6em;font-size:.88rem}
+}
+@media (max-width:480px){.sub{display:none}.hbtn .vr-label{display:none}.hbtn.vr{width:36px;padding:0;justify-content:center}}
+@media (prefers-reduced-motion:reduce){.stage::after,.help{transition:none}}
+</style>
+<style>[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px)}</style>
+</head>
+<body>
+
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="mark">AMM</span>
+      <span style="min-width:0"><span class="ttl">Main gear wheel change</span><span class="sub">Task 32-41 · guided step trainer</span></span>
+    </div>
+    <button class="hbtn" id="installBtn" type="button" hidden title="Install as an app">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>
+      <span class="vr-label">Install</span>
+    </button>
+    <button class="hbtn vr" id="vrBtn" type="button" title="View in a VR headset">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v8a2 2 0 0 1-2 2h-3.5l-2-2.5h-3l-2 2.5H5a2 2 0 0 1-2-2z"/><circle cx="8" cy="12.5" r="1.6"/><circle cx="16" cy="12.5" r="1.6"/></svg>
+      <span class="vr-label">VR</span>
+    </button>
+    <button class="hbtn icon" id="restartBtn" type="button" title="Restart task" aria-label="Restart task">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg>
+    </button>
+  </header>
+
+  <div class="main">
+    <div class="stage" id="stage">
+      <span class="demo-chip">Training demo · illustrative steps</span>
+      <span class="help" id="help">Drag to look around · scroll or pinch to zoom · click parts</span>
+      <div class="tip" id="tip" hidden></div>
+      <div class="tools"><div class="tool-row" id="tools" role="group" aria-label="Tool tray"></div></div>
+    </div>
+
+    <aside class="panel" aria-label="Task card">
+      <div class="pscroll" id="pscroll"></div>
+      <div class="pfoot">
+        <p class="fb info" id="fb" role="status" aria-live="polite">Choose a tool, then click the part.</p>
+        <div class="btns">
+          <button class="btn" type="button" id="hintBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>Hint</button>
+          <button class="btn next" type="button" id="nextBtn" disabled></button>
+        </div>
+        <div class="stats" id="stats"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const ease = k => k<.5 ? 2*k*k : 1-Math.pow(-2*k+2,2)/2;
+
+/* ---------- Tools, task data, steps ---------- */
+const TOOLS = [
+  {id:"hand", name:"Hands", icon:'<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V13M17 12a1.5 1.5 0 0 1 3 0v3a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L3.5 15a1.5 1.5 0 0 1 2.3-1.9L8 15"/>'},
+  {id:"torch", name:"Inspection torch", short:"Torch", icon:'<path d="M7 3h10l-2 6v12H9V9z"/><path d="M9 9h6"/><path d="M12 13v3"/>'},
+  {id:"driver", name:"Screwdriver", icon:'<path d="M14.5 3.5l6 6-3.5 3.5-6-6z"/><path d="M12.8 9.7L4 18.5 5.5 20l8.8-8.8"/>'},
+  {id:"socket", name:"Socket wrench", short:"Socket wrench", icon:'<path d="M4 20l9-9"/><circle cx="16" cy="8" r="4.2"/><circle cx="16" cy="8" r="1.6"/>'},
+  {id:"axlesocket", name:"Axle nut socket", short:"Axle nut socket", icon:'<path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"/><circle cx="12" cy="12" r="3.4"/>'},
+  {id:"torque", name:"Torque wrench", short:"Torque wrench", icon:'<path d="M3 21l11-11"/><circle cx="17" cy="7" r="3.6"/><path d="M5.5 14.5l4 4"/><circle cx="7.5" cy="16.5" r=".6"/>'}
+];
+const toolName = id => (TOOLS.find(t=>t.id===id)||{name:id}).name;
+const NUT_TORQUE = 150;
+
+const NAMES = {cut:"cut in the tread", wheel:"outboard wheel and tire", spare:"replacement wheel on the dolly", oldwheel:"removed wheel",
+  inboardWheel:"inboard wheel", brake:"brake assembly", jack:"axle jack", hubcap:"hubcap", lockbolt:"axle nut lock bolt", axlenut:"axle nut",
+  axle:"axle", strut:"shock strut", wing:"wing lower surface", fuselage:"fuselage", dolly:"wheel dolly", pin:"ground lock pin streamer", screw:"hubcap screw"};
+const nameOf = id => NAMES[id && id.startsWith("screw-") ? "screw" : id] || "part";
+
+const lift = () => W.aircraft ? W.aircraft.position.y : 0;
+const camNut  = () => ({t:[0.2,0.62+lift(),0], r:0.95, th:1.2, ph:1.25});
+const camLock = () => ({t:[0.2,0.68+lift(),0], r:0.75, th:1.15, ph:0.95});
+const camCap  = () => ({t:[0.27,0.62+lift(),0], r:1.05, th:1.25, ph:1.3});
+const camJack = () => ({t:[-0.9,0.5,0.35], r:2.9, th:0.25, ph:1.18});
+
+const STEPS = [
+  {phase:"Inspection", title:"Find the tire damage", kind:"pick", tool:"torch", target:"cut",
+   text:"A walk-around found a problem with the outboard wheel on this main gear. Select the inspection torch, then click the damage that makes this wheel change necessary.",
+   note:"A cut that shows the tire cords is beyond limits.",
+   wrong:"Look along the tread of the outboard tire.",
+   success:"Cut found. The cords are showing, so the wheel and tire assembly must be replaced.",
+   cam:()=>({t:[0.05,0.78,0.15], r:2.0, th:0.45, ph:1.12}), run:()=>Promise.resolve()},
+  {phase:"Preparation", title:"Make the aircraft safe", kind:"quiz",
+   text:"Before you jack the aircraft, tick every precaution that applies, then press Check.",
+   warn:"Make sure the landing gear ground lock pins are installed before you jack the aircraft. If the gear retracts, it can kill or injure persons.",
+   options:[
+     {id:"a", t:"Install the landing gear ground lock pins", ok:true},
+     {id:"b", t:"Put chocks at the wheels of the other main gear", ok:true},
+     {id:"c", t:"Put a DO NOT OPERATE tag on the brake controls", ok:true},
+     {id:"d", t:"Inflate the tire to maximum pressure before jacking", ok:false},
+     {id:"e", t:"Remove the ground lock pins so the gear can move freely", ok:false}],
+   hintText:"Think about what stops the gear retracting, what stops the aircraft rolling, and who could operate the brakes.",
+   success:"Aircraft made safe. Ground lock pins in, other gear chocked, brake controls tagged.",
+   cam:()=>({t:[-0.6,1.0,0], r:4.4, th:0.7, ph:1.15}), run:()=>{ W.pin.visible = true; return Promise.resolve(); }},
+  {phase:"Preparation", title:"Jack the axle", kind:"pick", tool:"hand", target:"jack",
+   text:"Move the axle jack under the jacking point, then raise it until the tire is just clear of the floor. Click the axle jack.",
+   caution:"Lift only until the tire clears the floor. Do not jack higher than necessary.",
+   wrong:"This step needs the yellow axle jack.",
+   success:"Axle raised. The tire is clear of the floor.", cam:camJack, run:()=>jackUp()},
+  {phase:"Removal", title:"Remove the hubcap screws", kind:"pickAll", tool:"driver", target:"screw", count:6,
+   text:"Use the screwdriver to remove the six screws that hold the hubcap. Click each screw.",
+   wrong:"The screws are on the face of the hubcap, at the centre of the wheel.",
+   success:"All six screws removed. Keep them with the hubcap.", cam:camCap, each:p=>unscrew(p)},
+  {phase:"Removal", title:"Remove the hubcap", kind:"pick", tool:"hand", target:"hubcap",
+   text:"Pull the hubcap straight off the wheel hub.",
+   success:"Hubcap removed. The axle nut and its lock bolt are now visible.", cam:camCap, run:()=>removeHubcap()},
+  {phase:"Removal", title:"Remove the axle nut lock bolt", kind:"pick", tool:"socket", target:"lockbolt",
+   text:"Use the socket wrench to remove the bolt that locks the axle nut.",
+   wrong:"The lock bolt goes through the top of the axle nut.",
+   success:"Lock bolt removed. The axle nut is free to turn.", cam:camLock, run:()=>removeLockBolt()},
+  {phase:"Removal", title:"Remove the axle nut", kind:"pick", tool:"axlesocket", target:"axlenut",
+   text:"Use the axle nut socket to remove the axle nut.",
+   caution:"Support the weight of the wheel while you remove the nut, so the axle threads are not damaged.",
+   success:"Axle nut removed.", cam:camNut, run:()=>removeNut()},
+  {phase:"Removal", title:"Remove the wheel", kind:"pick", tool:"hand", target:"wheel",
+   text:"Pull the wheel and tire assembly straight off the axle and put it aside.",
+   caution:"Keep the wheel square to the axle as it comes off. Do not let it drag on the axle threads.",
+   success:"Wheel removed. Tag it unserviceable and send it to the tire shop.",
+   cam:()=>({t:[0.4,0.66,0.1], r:3.0, th:0.95, ph:1.2}), run:()=>removeWheel()},
+  {phase:"Installation", title:"Fit the replacement wheel", kind:"pick", tool:"hand", target:"spare",
+   text:"Take the replacement wheel from the dolly and push it onto the axle.",
+   note:"Line up the wheel drive keys with the brake rotor slots before you push the wheel fully on.",
+   wrong:"The replacement wheel is on the blue dolly.",
+   success:"Replacement wheel fitted on the axle.",
+   cam:()=>({t:[0.9,0.62,0.6], r:3.3, th:0.8, ph:1.15}), run:()=>fitSpare()},
+  {phase:"Installation", title:"Install and torque the axle nut", kind:"torque", tool:"torque", target:"axlenut", answer:NUT_TORQUE, values:[110,150,190,230],
+   text:"Install the axle nut. Set the torque wrench to the axle nut torque given in Job set-up, then click the axle nut.",
+   success:"Axle nut torqued to "+NUT_TORQUE+" lbf·ft.", cam:camNut, enter:()=>{ W.nutGhost.visible = true; }, run:()=>installNut()},
+  {phase:"Installation", title:"Install the lock bolt", kind:"pick", tool:"socket", target:"lockbolt",
+   text:"Use the socket wrench to install the lock bolt through the axle nut.",
+   success:"Lock bolt installed. The axle nut is locked.", cam:camLock, enter:()=>{ W.lockGhost.visible = true; }, run:()=>installLockBolt()},
+  {phase:"Installation", title:"Install the hubcap", kind:"pick", tool:"driver", target:"hubcap",
+   text:"Put the hubcap on the hub and install its six screws with the screwdriver.",
+   success:"Hubcap and screws installed.", cam:camCap, enter:()=>{ W.capGhost.visible = true; }, run:()=>installHubcap()},
+  {phase:"Close-up", title:"Lower the aircraft", kind:"pick", tool:"hand", target:"jack",
+   text:"Lower the axle jack until the tire carries the weight, then move the jack clear.",
+   note:"Do a tire pressure check before you release the aircraft for flight.",
+   success:"Aircraft lowered. Wheel change complete.", cam:camJack, run:()=>jackDown()}
+];
+
+/* ---------- State ---------- */
+const S = {i:0, done:false, tool:"hand", errors:0, hints:0, stepErrors:[], picked:new Set(), torque:null, busy:false, finished:false, t0:performance.now(), tEnd:0, msg:{kind:"info", text:""}};
+
+/* ---------- Three.js setup ---------- */
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.xr.enabled = true;
+stage.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1013);
+scene.fog = new THREE.Fog(0x0d1013, 10, 28);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.03, 100);
+const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
+
+scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x2a2622, 0.8));
+const key = new THREE.DirectionalLight(0xfff3e0, 1.15);
+key.position.set(4, 8, 5); key.castShadow = true; key.shadow.mapSize.set(1024,1024);
+Object.assign(key.shadow.camera, {left:-4, right:4, top:4, bottom:-4, near:1, far:24}); key.shadow.bias = -0.0005;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9fc4ff, 0.4); fill.position.set(-5, 3, -4); scene.add(fill);
+const torch = new THREE.SpotLight(0xfff4d6, 0, 7, 0.32, 0.5, 1.2);
+torch.position.set(0.15,-0.1,0); camera.add(torch); torch.target.position.set(0,0,-1); camera.add(torch.target);
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60,60), new THREE.MeshStandardMaterial({color:0x2a2e33, roughness:.95}));
+floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+const grid = new THREE.GridHelper(60, 60, 0x39414a, 0x23292f); grid.position.y = 0.002; scene.add(grid);
+for (const [w,d,x,z] of [[14,0.07,0,2.7],[0.07,9,2.9,0]]) {
+  const l = new THREE.Mesh(new THREE.PlaneGeometry(w,d), new THREE.MeshBasicMaterial({color:0xc99a2a}));
+  l.rotation.x = -Math.PI/2; l.position.set(x,0.004,z); scene.add(l);
+}
+
+const proxyMat = new THREE.MeshBasicMaterial({colorWrite:false, depthWrite:false});
+const ghostMat = new THREE.MeshBasicMaterial({color:0x4fd1e8, transparent:true, opacity:.32, depthWrite:false});
+const M = (color, rough=.6, metal=0, extra) => new THREE.MeshStandardMaterial(Object.assign({color, roughness:rough, metalness:metal}, extra||{}));
+function mesh(geo, mat, pos, rot){ const m = new THREE.Mesh(geo, mat); if(pos) m.position.set(pos[0],pos[1],pos[2]); if(rot) m.rotation.set(rot[0],rot[1],rot[2]); return m; }
+function proxy(r){ const p = new THREE.Mesh(new THREE.SphereGeometry(r,10,8), proxyMat); return p; }
+function tag(obj, id){ obj.userData.part = id; obj.traverse(o=>{ if(o.isMesh){ const isProxy = o.material===proxyMat; o.castShadow = !isProxy; o.receiveShadow = !isProxy; } }); return obj; }
+const X90 = [0,0,Math.PI/2];
+
+function makeWheel(withCut){
+  const g = new THREE.Group();
+  const pts = [[0.40,-0.165],[0.52,-0.185],[0.585,-0.175],[0.615,-0.14],[0.622,-0.08],[0.622,0.08],[0.615,0.14],[0.585,0.175],[0.52,0.185],[0.40,0.165]].map(p=>new THREE.Vector2(p[0],p[1]));
+  g.add(mesh(new THREE.LatheGeometry(pts, 72), M(0x1d1e21,.9,0,{side:THREE.DoubleSide}), null, X90));
+  for (const ax of [-0.075,0,0.075]) { const t = mesh(new THREE.TorusGeometry(0.6215,0.0075,6,96), M(0x0b0b0c,.95), [ax,0,0], [0,Math.PI/2,0]); g.add(t); }
+  g.add(mesh(new THREE.CylinderGeometry(0.40,0.40,0.33,48,1,true), M(0xb8bec5,.4,.55,{side:THREE.DoubleSide}), null, X90));
+  for (const ax of [-0.168,0.168]) g.add(mesh(new THREE.TorusGeometry(0.405,0.018,8,64), M(0xc9ced4,.35,.6), [ax,0,0], [0,Math.PI/2,0]));
+  g.add(mesh(new THREE.CylinderGeometry(0.39,0.39,0.02,48), M(0xa9b0b8,.45,.5), [0.16,0,0], X90));
+  g.add(mesh(new THREE.CylinderGeometry(0.39,0.39,0.02,48), M(0xa9b0b8,.45,.5), [-0.16,0,0], X90));
+  g.add(mesh(new THREE.CylinderGeometry(0.17,0.19,0.03,32), M(0x9aa2ab,.4,.55), [0.175,0,0], X90));
+  for (let i=0;i<10;i++){ const a=i/10*Math.PI*2; g.add(mesh(new THREE.CylinderGeometry(0.014,0.014,0.03,10), M(0x6f7780,.4,.6), [0.172, Math.sin(a)*0.3, Math.cos(a)*0.3], X90)); }
+  g.add(mesh(new THREE.CylinderGeometry(0.008,0.008,0.05,8), M(0x8a9097,.4,.6), [0.19, 0.34*Math.sin(2.2), 0.34*Math.cos(2.2)], X90));
+  if (withCut) {
+    const a = 24*Math.PI/180;
+    const cut = new THREE.Group(); cut.position.set(0.035, Math.sin(a)*0.625, Math.cos(a)*0.625); cut.rotation.x = -a;
+    const inner = new THREE.Group(); inner.rotation.z = 0.32; cut.add(inner);
+    inner.add(mesh(new THREE.BoxGeometry(0.15,0.032,0.006), M(0x050505,1)));
+    inner.add(mesh(new THREE.BoxGeometry(0.07,0.022,0.006), M(0x050505,1), [0.07,0.008,0], [0,0,0.35]));
+    inner.add(mesh(new THREE.BoxGeometry(0.11,0.008,0.009), M(0xb38d58,.85), [-0.005,0.003,0]));
+    inner.add(mesh(new THREE.BoxGeometry(0.08,0.006,0.009), M(0x9c7a4a,.85), [0.01,-0.007,0]));
+    cut.add(proxy(0.075));
+    tag(cut, "cut"); g.add(cut);
+  }
+  return g;
+}
+
+function makeBrake(x, sign){
+  const b = new THREE.Group(); b.position.set(x, 0.62, 0);
+  b.add(mesh(new THREE.CylinderGeometry(0.33,0.33,0.19,40), M(0x4a4f55,.7,.3), null, X90));
+  b.add(mesh(new THREE.CylinderGeometry(0.22,0.22,0.24,32), M(0x6b7178,.5,.5), null, X90));
+  for (let i=0;i<8;i++){ const a=i/8*Math.PI*2; b.add(mesh(new THREE.CylinderGeometry(0.035,0.035,0.08,12), M(0x8b9299,.45,.5), [-0.13*sign, Math.sin(a)*0.25, Math.cos(a)*0.25], X90)); }
+  for (const z of [-0.12,0.12]) b.add(mesh(new THREE.CylinderGeometry(0.01,0.01,0.1,8), M(0xc4c9cf,.3,.6), [-0.17*sign, 0.27, z], X90));
+  return b;
+}
+
+function ghostOf(obj, part){
+  const g = obj.clone(true);
+  g.traverse(o=>{ if(o!==g && o.userData) delete o.userData.part; if(o.isMesh){ if(o.material!==proxyMat) o.material = ghostMat; o.castShadow=false; o.receiveShadow=false; } });
+  g.userData.part = part; g.visible = false; return g;
+}
+
+/* ---------- World (rebuilt on restart) ---------- */
+let W = {};
+let world = null;
+function disposeWorld(){
+  if(!world) return;
+  scene.remove(world);
+  world.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material && o.material!==proxyMat && o.material!==ghostMat) o.material.dispose(); });
+}
+function buildWorld(){
+  disposeWorld();
+  world = new THREE.Group(); scene.add(world);
+  W = {};
+  const ac = new THREE.Group(); world.add(ac); W.aircraft = ac;
+
+  ac.add(tag(mesh(new THREE.BoxGeometry(11,0.24,3.4), M(0xaeb6bf,.7,.1), [0.6,3.62,0]), "wing"));
+  ac.add(tag(mesh(new THREE.CylinderGeometry(2.1,2.1,22,48), M(0xc4cad1,.65,.1), [-6.7,3.9,0], [Math.PI/2,0,0]), "fuselage"));
+
+  const strut = new THREE.Group();
+  strut.add(mesh(new THREE.CylinderGeometry(0.1,0.1,1.15,24), M(0xdde1e5,.2,.75), [-1.0,1.27,0]));
+  strut.add(mesh(new THREE.CylinderGeometry(0.15,0.15,1.85,24), M(0x8f979f,.5,.45), [-1.0,2.65,0]));
+  strut.add(mesh(new THREE.BoxGeometry(0.3,0.18,0.26), M(0x7f878f,.5,.45), [-1.0,0.66,0]));
+  strut.add(mesh(new THREE.BoxGeometry(0.05,0.5,0.05), M(0x7f878f,.5,.45), [-1.0,1.05,0.2], [-0.45,0,0]));
+  strut.add(mesh(new THREE.BoxGeometry(0.05,0.5,0.05), M(0x7f878f,.5,.45), [-1.0,1.5,0.2], [0.45,0,0]));
+  strut.add(mesh(new THREE.SphereGeometry(0.045,16,12), M(0x5b636b,.5,.4), [-1.0,0.55,0]));
+  ac.add(tag(strut, "strut"));
+
+  const pin = new THREE.Group();
+  pin.add(mesh(new THREE.CylinderGeometry(0.012,0.012,0.12,8), M(0xd0d4d8,.3,.6), [-0.86,1.62,0.12], X90));
+  pin.add(mesh(new THREE.PlaneGeometry(0.06,0.42), M(0xd8312c,.7,0,{side:THREE.DoubleSide}), [-0.8,1.4,0.13]));
+  pin.visible = false; ac.add(tag(pin, "pin")); W.pin = pin;
+
+  ac.add(tag(mesh(new THREE.CylinderGeometry(0.06,0.06,2.46,24), M(0xbfc5cc,.3,.6), [-1.0,0.62,0], X90), "axle"));
+  ac.add(tag(makeBrake(-0.34, 1), "brake"));
+  ac.add(tag(makeBrake(-1.66, -1), "brake"));
+
+  const inb = makeWheel(false); inb.position.set(-2.0,0.62,0); inb.rotation.y = Math.PI;
+  inb.add(mesh(new THREE.CylinderGeometry(0.15,0.15,0.11,32), M(0xd9dde2,.25,.75), [0.225,0,0], X90));
+  ac.add(tag(inb, "inboardWheel"));
+
+  const wheel = makeWheel(true); wheel.position.set(0,0.62,0); ac.add(tag(wheel, "wheel")); W.wheel = wheel;
+
+  const nut = tag(mesh(new THREE.CylinderGeometry(0.08,0.08,0.05,6), M(0xa7aeb6,.35,.65), [0.205,0.62,0], X90), "axlenut");
+  ac.add(nut); W.nut = nut;
+
+  const lock = new THREE.Group(); lock.position.set(0.205, 0.695, 0);
+  lock.add(mesh(new THREE.CylinderGeometry(0.011,0.011,0.06,10), M(0xcfd4da,.3,.7)));
+  lock.add(mesh(new THREE.CylinderGeometry(0.022,0.022,0.014,6), M(0xcfd4da,.3,.7), [0,0.034,0]));
+  lock.add(proxy(0.04));
+  ac.add(tag(lock, "lockbolt")); W.lock = lock;
+
+  const cap = new THREE.Group(); cap.position.set(0.17, 0.62, 0);
+  cap.add(mesh(new THREE.CylinderGeometry(0.16,0.16,0.11,40,1,true), M(0xd9dde2,.25,.75,{side:THREE.DoubleSide}), [0.055,0,0], X90));
+  cap.add(mesh(new THREE.CylinderGeometry(0.16,0.16,0.012,40), M(0xd9dde2,.25,.75), [0.112,0,0], X90));
+  cap.add(mesh(new THREE.CylinderGeometry(0.095,0.11,0.03,32), M(0xe6e9ec,.2,.8), [0.13,0,0], X90));
+  cap.add(proxy(0.13));
+  W.screws = [];
+  for (let i=0;i<6;i++){
+    const a = i/6*Math.PI*2 + Math.PI/6;
+    const s = new THREE.Group(); s.position.set(0.12, Math.sin(a)*0.135, Math.cos(a)*0.135);
+    s.add(mesh(new THREE.CylinderGeometry(0.013,0.013,0.012,12), M(0x5c636b,.4,.6), null, X90));
+    s.add(mesh(new THREE.BoxGeometry(0.003,0.016,0.004), M(0x15181b,.8), [0.007,0,0]));
+    s.add(proxy(0.032));
+    cap.add(tag(s, "screw-"+(i+1))); W.screws.push(s);
+  }
+  ac.add(tag(cap, "hubcap")); W.cap = cap;
+
+  W.nutGhost = ghostOf(nut, "axlenut"); ac.add(W.nutGhost);
+  W.lockGhost = ghostOf(lock, "lockbolt"); ac.add(W.lockGhost);
+  W.capGhost = ghostOf(cap, "hubcap"); ac.add(W.capGhost);
+
+  const jack = new THREE.Group(); jack.position.set(-1.0, 0, 0.95);
+  const yel = () => M(0xe0ae2e,.55,.15);
+  jack.add(mesh(new THREE.BoxGeometry(0.46,0.12,0.4), yel(), [0,0.11,0]));
+  jack.add(mesh(new THREE.CylinderGeometry(0.085,0.095,0.24,24), yel(), [0,0.29,0]));
+  const ramGeo = new THREE.CylinderGeometry(0.055,0.055,1,20); ramGeo.translate(0,0.5,0);
+  const ram = mesh(ramGeo, M(0xd7dbe0,.25,.7), [0,0.41,0]); jack.add(ram);
+  const pad = mesh(new THREE.CylinderGeometry(0.075,0.06,0.03,20), M(0x3a3f45,.6,.3)); jack.add(pad);
+  jack.add(mesh(new THREE.CylinderGeometry(0.014,0.014,0.9,10), M(0x30363c,.5,.4), [0,0.36,0.42], [0.95,0,0]));
+  for (const [x,z] of [[-0.19,-0.16],[0.19,-0.16],[-0.19,0.16],[0.19,0.16]]) jack.add(mesh(new THREE.CylinderGeometry(0.035,0.035,0.03,14), M(0x222222,.8), [x,0.035,z], X90));
+  world.add(tag(jack, "jack")); W.jack = jack; W.ram = ram; W.pad = pad;
+  setRam(0.44);
+
+  const dolly = new THREE.Group(); dolly.position.set(1.75, 0, 1.3);
+  const blue = () => M(0x3d6b8f,.55,.3);
+  for (const z of [-0.22,0.22]) dolly.add(mesh(new THREE.BoxGeometry(1.0,0.05,0.06), blue(), [0,0.025,z]));
+  for (const x of [-0.45,0.45]) dolly.add(mesh(new THREE.BoxGeometry(0.06,0.05,0.5), blue(), [x,0.025,0]));
+  dolly.add(mesh(new THREE.CylinderGeometry(0.015,0.015,0.9,8), blue(), [0.62,0.4,0], [0,0,-0.6]));
+  world.add(tag(dolly, "dolly"));
+
+  const spare = makeWheel(false); spare.position.set(1.75, 0.66, 1.3); world.add(tag(spare, "spare")); W.spare = spare;
+}
+function setRam(top){ W.ram.scale.y = Math.max(0.01, top - 0.41); W.pad.position.y = top - 0.015; W.ramTop = top; }
+
+/* ---------- Tweens ---------- */
+const tweens = [];
+function tween(ms, fn){ return new Promise(res=>{ tweens.push({t0:performance.now(), ms, fn, res}); }); }
+function runTweens(now){
+  for (let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; const k=Math.min(1,(now-tw.t0)/tw.ms); tw.fn(ease(k), k); if(k>=1){ tweens.splice(i,1); tw.res(); } }
+}
+const lerp = (a,b,k) => a+(b-a)*k;
+
+/* ---------- Step animations ---------- */
+const DOME = 0.505, LIFT = 0.08;
+async function jackUp(){
+  const j = W.jack, z0 = j.position.z;
+  await tween(650, k=>{ j.position.z = lerp(z0, 0, k); });
+  const r0 = W.ramTop;
+  await tween(450, k=>setRam(lerp(r0, DOME, k)));
+  await tween(900, k=>{ W.aircraft.position.y = lerp(0, LIFT, k); setRam(DOME + W.aircraft.position.y); });
+}
+async function jackDown(){
+  const y0 = W.aircraft.position.y;
+  await tween(900, k=>{ W.aircraft.position.y = lerp(y0, 0, k); setRam(DOME + W.aircraft.position.y); });
+  const r0 = W.ramTop;
+  await tween(400, k=>setRam(lerp(r0, 0.44, k)));
+  const j = W.jack; await tween(650, k=>{ j.position.z = lerp(0, 0.95, k); });
+}
+async function unscrew(s){
+  const x0 = s.position.x;
+  await tween(520, k=>{ s.position.x = x0 + 0.06*k; s.rotation.x = k*Math.PI*4; });
+  s.visible = false;
+}
+async function removeHubcap(){
+  const c = W.cap, x0 = c.position.x;
+  await tween(700, k=>{ c.position.x = x0 + 0.4*k; c.position.y = 0.62 - 0.1*k*k; });
+  c.visible = false;
+}
+async function removeLockBolt(){
+  const b = W.lock, y0 = b.position.y;
+  await tween(600, k=>{ b.position.y = y0 + 0.1*k; b.rotation.y = k*Math.PI*6; });
+  b.visible = false;
+}
+async function removeNut(){
+  const n = W.nut, x0 = n.position.x;
+  await tween(800, k=>{ n.position.x = x0 + 0.16*k; n.rotation.x = k*Math.PI*3; });
+  n.visible = false;
+}
+async function removeWheel(){
+  const w = W.wheel;
+  await tween(800, k=>{ w.position.x = lerp(0, 0.62, k); });
+  world.attach(w);
+  const p0 = w.position.clone(), p1 = new THREE.Vector3(1.9, 0.622, -1.25);
+  await tween(900, k=>{ w.position.lerpVectors(p0, p1, k); });
+  w.userData.part = "oldwheel";
+}
+async function fitSpare(){
+  const s = W.spare, y = 0.62 + lift();
+  const p0 = s.position.clone(), p1 = new THREE.Vector3(0.65, y, 0), p2 = new THREE.Vector3(0, y, 0);
+  await tween(800, k=>{ s.position.lerpVectors(p0, p1, k); });
+  await tween(650, k=>{ s.position.lerpVectors(p1, p2, k); });
+  W.aircraft.attach(s); s.userData.part = "wheel"; W.wheel = s;
+}
+async function installNut(){
+  W.nutGhost.visible = false; const n = W.nut; n.visible = true;
+  await tween(800, k=>{ n.position.x = lerp(0.365, 0.205, k); n.rotation.x = (1-k)*Math.PI*3; });
+}
+async function installLockBolt(){
+  W.lockGhost.visible = false; const b = W.lock; b.visible = true;
+  await tween(600, k=>{ b.position.y = lerp(0.795, 0.695, k); b.rotation.y = (1-k)*Math.PI*6; });
+}
+async function installHubcap(){
+  W.capGhost.visible = false; const c = W.cap; c.visible = true;
+  for (const s of W.screws){ s.visible = true; s.position.x = 0.12; s.rotation.x = 0; }
+  await tween(700, k=>{ c.position.x = lerp(0.5, 0.17, k); c.position.y = 0.62; });
+}
+
+/* ---------- Camera orbit ---------- */
+const orbit = {t:new THREE.Vector3(-0.6,1.0,0), r:4.4, th:0.7, ph:1.15};
+function applyOrbit(){
+  if (renderer.xr.isPresenting) return;
+  const {t,r,th,ph} = orbit, sp = Math.sin(ph);
+  camera.position.set(t.x + r*sp*Math.sin(th), clamp(t.y + r*Math.cos(ph), 0.12, 3.35), t.z + r*sp*Math.cos(th));
+  camera.lookAt(t);
+}
+let flying = 0;
+function flyTo(c){
+  const a = {t:orbit.t.clone(), r:orbit.r, th:orbit.th, ph:orbit.ph};
+  const bT = new THREE.Vector3(c.t[0],c.t[1],c.t[2]);
+  let dth = c.th - a.th; dth = Math.atan2(Math.sin(dth), Math.cos(dth));
+  const id = ++flying;
+  return tween(800, k=>{ if(id!==flying) return; orbit.t.lerpVectors(a.t, bT, k); orbit.r = lerp(a.r, c.r, k); orbit.th = a.th + dth*k; orbit.ph = lerp(a.ph, c.ph, k); applyOrbit(); });
+}
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+/* ---------- Picking ---------- */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+function visibleChain(o){ while(o){ if(!o.visible) return false; o = o.parent; } return true; }
+function partOf(o){
+  while(o){
+    const p = o.userData && o.userData.part;
+    if(p && !(p==="cut" && S.i!==0)) return o; // after step 1 the cut is just part of the wheel
+    o = o.parent;
+  }
+  return null;
+}
+function firstPart(){
+  const hits = raycaster.intersectObject(world, true);
+  for (const h of hits){ if(!visibleChain(h.object)) continue; const p = partOf(h.object); if(p) return {obj:p, d:h.distance}; }
+  return null;
+}
+function rayFromClient(x,y){ const r = canvas.getBoundingClientRect(); ndc.set(((x-r.left)/r.width)*2-1, -((y-r.top)/r.height)*2+1); raycaster.setFromCamera(ndc, camera); }
+
+/* ---------- Highlight (hints) ---------- */
+let hl = null;
+function findParts(id){
+  const out = [];
+  world.traverse(o=>{ const p = o.userData && o.userData.part; if(!p) return; if((id==="screw" ? p.startsWith("screw-") : p===id) && visibleChain(o)) out.push(o); });
+  return out;
+}
+function clearHighlight(){
+  if(!hl) return;
+  for (const m of hl.meshes){ if(m.material.emissive) m.material.emissive.setRGB(0,0,0); else if(m.material===ghostMat) ghostMat.opacity = .32; }
+  hl = null;
+}
+function highlight(objs){
+  clearHighlight();
+  const meshes = [];
+  for (const o of objs) o.traverse(m=>{ if(m.isMesh && m.material!==proxyMat) meshes.push(m); });
+  hl = {meshes, until: performance.now()+3200};
+}
+function updateHighlight(now){
+  if(!hl) return;
+  if(now > hl.until){ clearHighlight(); return; }
+  const k = (Math.sin(now/140)+1)/2;
+  for (const m of hl.meshes){ if(m.material.emissive) m.material.emissive.setRGB(0.85*k, 0.42*k, 0.9*k); else if(m.material===ghostMat) ghostMat.opacity = .25 + .45*k; }
+}
+
+/* ---------- Feedback ---------- */
+function say(kind, text){
+  S.msg = {kind, text};
+  const fb = $("fb"); fb.className = "fb " + kind; fb.textContent = text;
+  if(kind==="err" || kind==="ok"){ stage.classList.remove("flash-err","flash-ok"); void stage.offsetWidth; stage.classList.add(kind==="err"?"flash-err":"flash-ok"); setTimeout(()=>stage.classList.remove("flash-err","flash-ok"), 650); }
+  drawBoard();
+}
+function addError(){ S.errors++; S.stepErrors[S.i] = (S.stepErrors[S.i]||0)+1; updateStats(); }
+
+/* ---------- Core interaction ---------- */
+async function onPick(hit){
+  if(S.busy || S.finished || !hit) return;
+  const id = hit.obj.userData.part, st = STEPS[S.i], nm = nameOf(id);
+  if(S.done){ say("info", "That's the "+nm+". This step is done, press Next step to continue."); return; }
+  if(st.kind==="quiz"){ say("info", "That's the "+nm+". Answer the precautions in the task card first."); return; }
+  const isTarget = st.kind==="pickAll" ? (id.startsWith("screw-") && !S.picked.has(id)) : id===st.target;
+  if(!isTarget){
+    addError();
+    let extra = st.wrong || "Read the step again and find the right part.";
+    if(id==="oldwheel") extra = "That wheel is coming off the aircraft. " + extra;
+    say("err", "That's the "+nm+", not the part for this step. "+extra);
+    return;
+  }
+  if(S.tool!==st.tool){
+    addError();
+    say("err", "Wrong tool for the "+nm+". "+(S.tool==="hand" ? "You can't do this by hand." : toolName(S.tool)+" won't do this job.")+" Pick the tool the step asks for.");
+    return;
+  }
+  if(st.kind==="torque" && S.torque!==st.answer){
+    if(S.torque==null){ say("err", "Set the torque wrench first. The value is in Job set-up."); return; }
+    addError();
+    say("err", "The wrench is set to "+S.torque+" lbf·ft. That doesn't match the axle nut torque in Job set-up.");
+    return;
+  }
+  clearHighlight();
+  S.busy = true;
+  if(st.kind==="pickAll"){
+    S.picked.add(id);
+    await st.each(hit.obj);
+    S.busy = false;
+    const left = st.count - S.picked.size;
+    if(left>0){ say("ok", "Screw removed. "+left+" to go."); return; }
+  } else {
+    await st.run(hit.obj);
+    S.busy = false;
+  }
+  complete();
+}
+
+function complete(){
+  const st = STEPS[S.i];
+  S.done = true;
+  say("ok", st.success);
+  renderSteps(); updateNext(); drawBoard();
+  if(S.i === STEPS.length-1){ S.tEnd = performance.now(); }
+}
+
+function next(){
+  if(!S.done || S.busy) return;
+  if(S.i === STEPS.length-1){ finish(); return; }
+  S.i++; enterStep();
+}
+
+function enterStep(){
+  const st = STEPS[S.i];
+  S.done = false; S.picked = new Set(); S.torque = null; S.quiz = new Set();
+  clearHighlight();
+  if(st.enter) st.enter();
+  renderCard(); updateNext();
+  say("info", st.kind==="quiz" ? "Tick every precaution that applies, then press Check." :
+               st.kind==="torque" ? "Pick the torque wrench, set it, then click the axle nut." :
+               st.kind==="pickAll" ? "Pick the tool, then click each screw." : "Pick the tool, then click the part.");
+  if(!renderer.xr.isPresenting) flyTo(st.cam());
+  $("pscroll").scrollTop = 0;
+}
+
+function selectTool(id){ S.tool = id; torch.intensity = id==="torch" ? 2.4 : 0; renderTools(); drawBoard(); }
+function setTorque(v){ S.torque = v; document.querySelectorAll(".tq").forEach(b=>b.setAttribute("aria-pressed", String(+b.dataset.v===v))); drawBoard(); }
+function toggleQuiz(id, on){ if(on===undefined) on = !S.quiz.has(id); if(on) S.quiz.add(id); else S.quiz.delete(id); const el = document.querySelector('.opt input[value="'+id+'"]'); if(el) el.checked = on; drawBoard(); }
+function checkQuiz(){
+  const st = STEPS[S.i]; if(S.done) return;
+  const right = st.options.filter(o=>o.ok).map(o=>o.id);
+  const wrongPicked = [...S.quiz].filter(id=>!right.includes(id)).length;
+  const missing = right.filter(id=>!S.quiz.has(id)).length;
+  if(!wrongPicked && !missing){ st.run(); complete(); return; }
+  addError();
+  const parts = [];
+  if(wrongPicked) parts.push(wrongPicked+" selected item"+(wrongPicked>1?"s are":" is")+" wrong");
+  if(missing) parts.push(missing+" required precaution"+(missing>1?"s are":" is")+" missing");
+  say("err", "Not yet: "+parts.join(" and ")+".");
+}
+function hint(){
+  if(S.finished) return;
+  const st = STEPS[S.i];
+  if(S.done){ say("info", "This step is done. Press Next step."); return; }
+  S.hints++; updateStats();
+  if(st.kind==="quiz"){ say("info", "Hint: "+st.hintText); return; }
+  const objs = findParts(st.target);
+  highlight(objs);
+  const target = st.target==="screw" ? "hubcap screws" : nameOf(st.target);
+  say("info", "Hint: use the "+toolName(st.tool).toLowerCase()+" on the "+target+" (shown in magenta)." + (st.kind==="torque" ? " The torque value is in Job set-up." : ""));
+}
+
+function finish(){
+  S.finished = true; if(!S.tEnd) S.tEnd = performance.now();
+  renderCard(); updateNext(); renderSteps();
+  say("ok", "Task complete. All 13 steps signed off in order.");
+  if(!renderer.xr.isPresenting) flyTo({t:[-0.4,0.9,0], r:4.6, th:0.75, ph:1.15});
+}
+
+function restart(){
+  tweens.length = 0; flying++;
+  buildWorld();
+  Object.assign(S, {i:0, done:false, tool:"hand", errors:0, hints:0, stepErrors:[], picked:new Set(), torque:null, busy:false, finished:false, t0:performance.now(), tEnd:0});
+  selectTool("hand");
+  enterStep(); updateStats();
+}
+
+/* ---------- 2D UI ---------- */
+const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4.5 4.5L19 7"/></svg>';
+const ICON_LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const ICON_DOT = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>';
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function renderTools(){
+  $("tools").innerHTML = '<span class="tool-label">Tools</span>' + TOOLS.map(t=>
+    '<button class="tool" type="button" data-tool="'+t.id+'" aria-pressed="'+(S.tool===t.id)+'"><svg viewBox="0 0 24 24" aria-hidden="true">'+t.icon+'</svg>'+esc(t.short||t.name)+'</button>').join("");
+}
+$("tools").addEventListener("click", e=>{ const b = e.target.closest(".tool"); if(b) selectTool(b.dataset.tool); });
+
+function setupBox(open){
+  return '<details class="box" id="setupBox"'+(open?' open':'')+'><summary>Job set-up</summary><div class="box-body"><dl class="kv">'+
+    '<dt>Tools</dt><dd>Inspection torch, axle jack, screwdriver, socket wrench, axle nut socket, torque wrench (50–250 lbf·ft)</dd>'+
+    '<dt>Parts</dt><dd>Replacement wheel and tire assembly</dd>'+
+    '<dt>Data</dt><dd>Axle nut torque: <span class="data-hi">'+NUT_TORQUE+' lbf·ft</span> (demo value)</dd>'+
+    '</dl><p class="small">Illustrative training content for this prototype. Not taken from an approved AMM, do not use for maintenance.</p></div></details>';
+}
+function stepListHTML(){
+  return '<details class="box"><summary>All steps ('+STEPS.length+')</summary><div class="box-body"><ol class="steplist" id="steplist">'+stepItems()+'</ol></div></details>';
+}
+function stepItems(){
+  return STEPS.map((s,i)=>{
+    const st = S.finished || i<S.i || (i===S.i && S.done) ? "done" : i===S.i ? "cur" : "locked";
+    return '<li class="'+st+'"><span class="n">'+String(i+1).padStart(2,"0")+'</span><span>'+esc(s.title)+'</span>'+(st==="done"?ICON_CHECK:st==="cur"?ICON_DOT:ICON_LOCK)+'</li>';
+  }).join("");
+}
+function renderSteps(){ const l = $("steplist"); if(l) l.innerHTML = stepItems(); const p = document.querySelectorAll(".prog i"); p.forEach((el,i)=>{ el.className = (S.finished || i<S.i || (i===S.i && S.done)) ? "done" : i===S.i ? "cur" : ""; }); }
+
+function renderCard(){
+  const box = $("pscroll");
+  const prog = '<div class="prog" aria-hidden="true">'+STEPS.map(()=>'<i></i>').join("")+'</div>';
+  if(S.finished){
+    const secs = Math.round((S.tEnd - S.t0)/1000);
+    const missed = STEPS.map((s,i)=>S.stepErrors[i] ? '<li>'+esc(s.title)+' · '+S.stepErrors[i]+' wrong attempt'+(S.stepErrors[i]>1?'s':'')+'</li>' : '').join("");
+    box.innerHTML = prog + '<div class="done-card"><p class="ref">Task 32-41 · signed off</p><p class="big">Task complete</p>'+
+      '<div class="tiles"><div><b>'+fmt(secs)+'</b><span>Time</span></div><div><b>'+S.errors+'</b><span>Wrong attempts</span></div><div><b>'+S.hints+'</b><span>Hints used</span></div></div>'+
+      (missed ? '<div class="callout caution"><b>REVIEW</b><ul style="margin:.2rem 0 0;padding-left:1.1rem">'+missed+'</ul></div>' : '<div class="callout note"><b>CLEAN RUN</b>Every step done right first time.</div>')+
+      '<button class="btn ghost-cyan" type="button" id="againBtn">Run the task again</button></div>' + stepListHTML();
+    $("againBtn").addEventListener("click", restart);
+    renderSteps(); return;
+  }
+  const st = STEPS[S.i];
+  let h = prog + '<p class="ref">32-41 · Step '+String(S.i+1).padStart(2,"0")+' / '+STEPS.length+' · '+esc(st.phase)+'</p>'+
+    '<h2 class="step-title">'+esc(st.title)+'</h2><p class="instr">'+esc(st.text)+'</p>';
+  if(st.warn) h += '<div class="callout warning"><b>WARNING</b>'+esc(st.warn)+'</div>';
+  if(st.caution) h += '<div class="callout caution"><b>CAUTION</b>'+esc(st.caution)+'</div>';
+  if(st.note) h += '<div class="callout note"><b>NOTE</b>'+esc(st.note)+'</div>';
+  if(st.kind==="quiz"){
+    h += '<div class="opts">'+st.options.map(o=>'<label class="opt"><input type="checkbox" value="'+o.id+'">'+esc(o.t)+'</label>').join("")+'</div>'+
+         '<button class="btn ghost-cyan check-btn" type="button" id="checkBtn">Check precautions</button>';
+  }
+  if(st.kind==="torque"){
+    h += '<div class="torque"><p>Torque wrench setting</p><div class="tq-row">'+st.values.map(v=>'<button class="tq" type="button" data-v="'+v+'" aria-pressed="false">'+v+' lbf·ft</button>').join("")+'</div></div>';
+  }
+  h += setupBox(st.kind==="torque") + stepListHTML();
+  box.innerHTML = h;
+  renderSteps();
+  if(st.kind==="quiz"){
+    box.querySelectorAll(".opt input").forEach(inp=>inp.addEventListener("change", ()=>toggleQuiz(inp.value, inp.checked)));
+    $("checkBtn").addEventListener("click", checkQuiz);
+  }
+  if(st.kind==="torque") box.querySelectorAll(".tq").forEach(b=>b.addEventListener("click", ()=>setTorque(+b.dataset.v)));
+}
+
+function updateNext(){
+  const b = $("nextBtn");
+  if(S.finished){ b.disabled = false; b.innerHTML = 'Restart task'; return; }
+  const last = S.i===STEPS.length-1;
+  b.disabled = !S.done;
+  b.innerHTML = S.done ? (last ? 'Finish task' : 'Next step') + ' <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+                       : ICON_LOCK + ' Next step locked';
+}
+$("nextBtn").addEventListener("click", ()=>{ if(S.finished) restart(); else next(); });
+$("hintBtn").addEventListener("click", hint);
+$("restartBtn").addEventListener("click", restart);
+
+function fmt(s){ return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); }
+function updateStats(){
+  const secs = Math.round(((S.tEnd||performance.now()) - S.t0)/1000);
+  $("stats").innerHTML = '<span>Errors '+S.errors+'</span><span>Hints '+S.hints+'</span><span>Time '+fmt(secs)+'</span>';
+}
+setInterval(updateStats, 1000);
+
+/* ---------- Pointer controls ---------- */
+const pointers = new Map(); let drag = null, pinch = null;
+const tip = $("tip");
+function hideHelp(){ $("help").classList.add("gone"); }
+canvas.addEventListener("pointerdown", e=>{
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pointers.size===1){ drag = {x:e.clientX, y:e.clientY, t:performance.now(), moved:0}; pinch = null; }
+  else if(pointers.size===2){ const [a,b] = [...pointers.values()]; pinch = {d:Math.hypot(a.x-b.x,a.y-b.y)||1, r:orbit.r}; drag = null; }
+});
+canvas.addEventListener("pointermove", e=>{
+  if(pointers.has(e.pointerId)) pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinch && pointers.size===2){ const [a,b] = [...pointers.values()]; const d = Math.hypot(a.x-b.x,a.y-b.y)||1; flying++; orbit.r = clamp(pinch.r*pinch.d/d, 0.45, 5.5); applyOrbit(); hideHelp(); return; }
+  if(drag && pointers.size===1){
+    const dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx)+Math.abs(dy);
+    if(drag.moved>6){ flying++; orbit.th -= dx*0.007; orbit.ph = clamp(orbit.ph - dy*0.006, 0.7, 1.52); applyOrbit(); hideHelp(); tip.hidden = true; }
+    return;
+  }
+  if(e.pointerType==="mouse") hover(e);
+});
+function endPointer(e, cancelled){
+  const wasTap = !cancelled && drag && drag.moved<=6 && (performance.now()-drag.t)<650 && !pinch && pointers.size===1;
+  pointers.delete(e.pointerId);
+  if(wasTap){ rayFromClient(e.clientX, e.clientY); onPick(firstPart()); }
+  if(pointers.size===0){ drag = null; pinch = null; }
+}
+canvas.addEventListener("pointerup", e=>endPointer(e,false));
+canvas.addEventListener("pointercancel", e=>endPointer(e,true));
+canvas.addEventListener("pointerleave", ()=>{ tip.hidden = true; canvas.classList.remove("over"); });
+canvas.addEventListener("wheel", e=>{ e.preventDefault(); flying++; orbit.r = clamp(orbit.r*(1+e.deltaY*0.0012), 0.45, 5.5); applyOrbit(); hideHelp(); }, {passive:false});
+let hoverQueued = false, lastHover = null;
+function hover(e){
+  lastHover = e; if(hoverQueued) return; hoverQueued = true;
+  requestAnimationFrame(()=>{
+    hoverQueued = false; const ev = lastHover;
+    rayFromClient(ev.clientX, ev.clientY); const h = firstPart();
+    if(h){ const r = stage.getBoundingClientRect(); tip.textContent = nameOf(h.obj.userData.part).replace(/^./, c=>c.toUpperCase()); tip.style.left = (ev.clientX-r.left)+"px"; tip.style.top = (ev.clientY-r.top)+"px"; tip.hidden = false; canvas.classList.add("over"); }
+    else { tip.hidden = true; canvas.classList.remove("over"); }
+  });
+}
+
+/* ---------- VR: task board + controllers (needs a WebXR headset browser) ---------- */
+const BW = 1024, BH = 1024;
+const bCanvas = document.createElement("canvas"); bCanvas.width = BW; bCanvas.height = BH;
+const bctx = bCanvas.getContext("2d");
+const bTex = new THREE.CanvasTexture(bCanvas); bTex.encoding = THREE.sRGBEncoding;
+const board = new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.2), new THREE.MeshBasicMaterial({map:bTex}));
+board.visible = false; scene.add(board);
+let bRects = [];
+const COL = {bg:"#141A20", panel:"#1B222A", line:"#2A333D", ink:"#E7ECEF", muted:"#8F9CA8", cyan:"#4FD1E8", green:"#47C27C", amber:"#F2B531", red:"#F0544F"};
+function wrapText(c, text, x, y, maxW, lh, maxLines){
+  const words = String(text).split(" "); let line = "", lines = 0;
+  for (let i=0;i<words.length;i++){
+    const test = line ? line+" "+words[i] : words[i];
+    if(c.measureText(test).width > maxW && line){ c.fillText(line, x, y); y += lh; lines++; line = words[i]; if(lines>=maxLines-1){ line = words.slice(i).join(" "); break; } }
+    else line = test;
+  }
+  if(line){ let l = line; while(c.measureText(l).width > maxW && l.length>3) l = l.slice(0,-4)+"…"; c.fillText(l, x, y); y += lh; }
+  return y;
+}
+function bButton(x,y,w,h,label,opts,act){
+  const c = bctx; opts = opts||{};
+  c.fillStyle = opts.fill || COL.panel; c.fillRect(x,y,w,h);
+  c.strokeStyle = opts.stroke || COL.line; c.lineWidth = 3; c.strokeRect(x+1.5,y+1.5,w-3,h-3);
+  c.fillStyle = opts.color || COL.ink; c.font = opts.font || '600 26px "IBM Plex Sans", sans-serif'; c.textBaseline = "middle";
+  wrapText(c, label, x+16, y+h/2 - (opts.twoLine?14:0), w-28, 30, opts.twoLine?2:1);
+  c.textBaseline = "alphabetic";
+  if(act) bRects.push({x,y,w,h,act});
+}
+function drawBoard(){
+  if(!board.visible) return;
+  const c = bctx; bRects = [];
+  c.fillStyle = COL.bg; c.fillRect(0,0,BW,BH); c.strokeStyle = COL.line; c.lineWidth = 6; c.strokeRect(3,3,BW-6,BH-6);
+  if(S.finished){
+    c.fillStyle = COL.green; c.font = '600 72px "Barlow Condensed", sans-serif'; c.fillText("Task complete", 48, 130);
+    c.fillStyle = COL.ink; c.font = '400 34px "IBM Plex Sans", sans-serif';
+    c.fillText("Time "+fmt(Math.round((S.tEnd-S.t0)/1000))+"   Wrong attempts "+S.errors+"   Hints "+S.hints, 48, 200);
+    bButton(48, 260, 420, 84, "Run the task again", {stroke:COL.cyan, color:COL.cyan}, restart);
+    bTex.needsUpdate = true; return;
+  }
+  const st = STEPS[S.i];
+  c.fillStyle = COL.cyan; c.font = '500 26px "IBM Plex Mono", monospace';
+  c.fillText("32-41 · STEP "+String(S.i+1).padStart(2,"0")+" / "+STEPS.length+" · "+st.phase.toUpperCase(), 48, 64);
+  c.fillStyle = COL.ink; c.font = '600 60px "Barlow Condensed", sans-serif'; let y = wrapText(c, st.title, 48, 130, BW-96, 60, 2);
+  c.fillStyle = "#C9D2DA"; c.font = '400 28px "IBM Plex Sans", sans-serif'; y = wrapText(c, st.text, 48, y+6, BW-96, 36, 4);
+  const call = st.warn ? ["WARNING", st.warn, COL.red] : st.caution ? ["CAUTION", st.caution, COL.amber] : st.note ? ["NOTE", st.note, COL.muted] : null;
+  if(call){ y += 8; c.fillStyle = call[2]; c.font = '600 24px "IBM Plex Mono", monospace'; c.fillText(call[0], 48, y+20); c.font = '400 25px "IBM Plex Sans", sans-serif'; c.fillStyle = COL.ink; y = wrapText(c, call[1], 48, y+54, BW-96, 32, 3); }
+  y += 14;
+  if(st.kind==="quiz" && !S.done){
+    for (const o of st.options){ const on = S.quiz.has(o.id); bButton(48, y, BW-96, 52, (on?"[x]  ":"[  ]  ")+o.t, {stroke:on?COL.cyan:COL.line, color:on?COL.cyan:COL.ink, font:'500 24px "IBM Plex Sans", sans-serif'}, ()=>toggleQuiz(o.id)); y += 58; }
+    bButton(48, y+4, 360, 56, "Check precautions", {stroke:COL.cyan, color:COL.cyan}, checkQuiz); y += 70;
+  }
+  if(st.kind==="torque" && !S.done){
+    c.fillStyle = COL.muted; c.font = '400 24px "IBM Plex Sans", sans-serif'; c.fillText("Torque wrench setting · Job set-up: axle nut "+NUT_TORQUE+" lbf·ft (demo)", 48, y+24); y += 40;
+    st.values.forEach((v,i)=>{ const on = S.torque===v; bButton(48+i*228, y, 210, 56, v+" lbf·ft", {stroke:on?COL.cyan:COL.line, color:on?COL.cyan:COL.ink, font:'500 26px "IBM Plex Mono", monospace'}, ()=>setTorque(v)); });
+    y += 70;
+  }
+  const fy = 786;
+  c.fillStyle = S.msg.kind==="ok" ? COL.green : S.msg.kind==="err" ? COL.red : COL.ink; c.font = '500 26px "IBM Plex Sans", sans-serif';
+  wrapText(c, S.msg.text, 48, fy, 600, 32, 2);
+  bButton(670, fy-30, 110, 60, "Hint", {}, hint);
+  bButton(796, fy-30, 180, 60, S.done ? (S.i===STEPS.length-1 ? "Finish" : "Next step") : "Locked", S.done ? {fill:COL.green, stroke:COL.green, color:"#06140c"} : {color:COL.muted}, S.done ? next : null);
+  c.fillStyle = COL.muted; c.font = '500 20px "IBM Plex Mono", monospace'; c.fillText("TOOLS", 48, 878);
+  TOOLS.forEach((t,i)=>{ const on = S.tool===t.id; bButton(48+i*155, 892, 150, 92, t.short||t.name, {twoLine:true, stroke:on?COL.cyan:COL.line, color:on?COL.cyan:COL.ink, fill:on?"#14303a":COL.panel, font:'600 20px "IBM Plex Sans", sans-serif'}, ()=>selectTool(t.id)); });
+  bTex.needsUpdate = true;
+}
+function boardHit(uv){ const x = uv.x*BW, y = (1-uv.y)*BH; const r = bRects.find(r=>x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h); if(r) r.act(); }
+
+const tmpM = new THREE.Matrix4();
+const controllers = [];
+for (let i=0;i<2;i++){
+  const ctl = renderer.xr.getController(i);
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]);
+  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x4fd1e8})); line.scale.z = 4; ctl.add(line);
+  ctl.addEventListener("select", ()=>{
+    tmpM.identity().extractRotation(ctl.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(ctl.matrixWorld);
+    raycaster.ray.direction.set(0,0,-1).applyMatrix4(tmpM);
+    const bh = raycaster.intersectObject(board, false)[0];
+    const ph = firstPart();
+    if(bh && (!ph || bh.distance < ph.d)) boardHit(bh.uv); else onPick(ph);
+  });
+  rig.add(ctl); controllers.push(ctl);
+}
+let xrOK = false;
+async function checkXR(){
+  try{ xrOK = !!(navigator.xr && await navigator.xr.isSessionSupported("immersive-vr")); }catch(_){ xrOK = false; }
+  const b = $("vrBtn"); b.classList.toggle("vr-on", xrOK); b.querySelector(".vr-label").textContent = xrOK ? "Enter VR" : "VR";
+}
+$("vrBtn").addEventListener("click", ()=>{
+  if(!xrOK){ say("info", "No VR headset found in this browser. To try VR mode, open this app's link in a headset browser such as Meta Quest Browser."); return; }
+  navigator.xr.requestSession("immersive-vr", {optionalFeatures:["local-floor","bounded-floor"]}).then(async session=>{
+    renderer.xr.setReferenceSpaceType("local-floor");
+    await renderer.xr.setSession(session);
+    rig.position.set(2.2,0,2.2); rig.rotation.set(0, Math.atan2(2.2,2.2), 0);
+    board.position.set(1.85,1.45,0.57); board.lookAt(2.2,1.45,2.2); board.visible = true; drawBoard();
+    session.addEventListener("end", ()=>{ rig.position.set(0,0,0); rig.rotation.set(0,0,0); board.visible = false; applyOrbit(); });
+  }).catch(err=>say("err", "VR could not start: "+(err && err.message ? err.message : "unknown error")));
+});
+
+/* ---------- Boot ---------- */
+buildWorld();
+renderTools();
+resize(); applyOrbit();
+enterStep();
+updateStats();
+checkXR();
+renderer.setAnimationLoop(()=>{ const now = performance.now(); runTweens(now); updateHighlight(now); renderer.render(scene, camera); });
+window.__trainer = {S, STEPS, W:()=>W, onPick, selectTool, setTorque, toggleQuiz, checkQuiz, next, hint, findParts, drawBoard, board, boardHit:(u,v)=>boardHit({x:u,y:v}), bRects:()=>bRects};
+})();
+</script>
+
+<script>
+/* Install button (Android / desktop Chrome and Edge) and offline support */
+(function(){
+  let deferred = null; const ib = document.getElementById("installBtn");
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; ib.hidden = false; });
+  ib.addEventListener("click", async () => { if(!deferred) return; deferred.prompt(); try{ await deferred.userChoice; }catch(_){} deferred = null; ib.hidden = true; });
+  window.addEventListener("appinstalled", () => { ib.hidden = true; });
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+})();
+</script>
+</body>
+</html>

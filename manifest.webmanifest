@@ -1,0 +1,16 @@
+{
+  "name": "AMM Step Trainer",
+  "short_name": "AMM Trainer",
+  "description": "Guided 3D training demo: a main landing gear wheel change where each step unlocks only when you do it correctly.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0D1013",
+  "theme_color": "#141A20",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
